@@ -1,6 +1,5 @@
 import os
 import sys
-import openpyxl
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.textinput import TextInput
@@ -39,7 +38,7 @@ class OmborApp(App):
         search_layout.add_widget(search_button)
         main_layout.add_widget(search_layout)
         
-        # ScrollView va Natijalar paneli
+        # ScrollView
         self.scroll_view = ScrollView(size_hint=(1, 1))
         self.results_grid = GridLayout(cols=1, spacing=10, size_hint_y=None)
         self.results_grid.bind(minimum_height=self.results_grid.setter('height'))
@@ -50,8 +49,8 @@ class OmborApp(App):
         self.data_rows = []
         self.headers = []
         
-        # Dastur to'liq yuklangach Excel'ni fonda o'qish
-        Clock.schedule_once(self.load_excel_data, 0.5)
+        # Ilova to'liq ochilib olgandan so'ng 1.5 soniya o'tib Excel o'qiladi
+        Clock.schedule_once(self.load_excel_data, 1.5)
         
         return main_layout
 
@@ -63,14 +62,20 @@ class OmborApp(App):
         excel_file = self.get_excel_path()
         
         if not os.path.exists(excel_file):
-            self.show_message(f"Excel fayli topilmadi:\n{excel_file}\n\nFayl GitHub'ga yuklanganini tekshiring!")
+            self.show_message(f"Fayl topilmadi:\n{excel_file}")
             return
 
         try:
-            wb = openpyxl.load_workbook(excel_file, data_only=True)
+            import openpyxl
+            wb = openpyxl.load_workbook(excel_file, read_only=True, data_only=True)
             sheet = wb.active
             
-            rows = list(sheet.iter_rows(values_only=True))
+            rows = []
+            for row in sheet.iter_rows(values_only=True):
+                rows.append(row)
+                
+            wb.close()
+
             if rows:
                 self.headers = [str(h) if h is not None else "" for h in rows[0]]
                 self.data_rows = rows[1:]
@@ -78,14 +83,14 @@ class OmborApp(App):
             else:
                 self.show_message("Excel fayli bo'sh!")
         except Exception as e:
-            self.show_message(f"Excel faylni o'qishda xatolik:\n{str(e)}")
+            self.show_message(f"Xatolik yuz berdi:\n{str(e)}")
 
     def show_message(self, text):
         self.results_grid.clear_widgets()
         lbl = Label(
             text=text,
             size_hint_y=None,
-            height=120,
+            height=150,
             font_size='16sp',
             halign='center',
             valign='middle'
@@ -102,7 +107,7 @@ class OmborApp(App):
             return
 
         if not self.data_rows:
-            self.show_message("Ma'lumotlar bazasi tayyor emas yoki bo'sh.")
+            self.show_message("Baza tayyor emas yoki bo'sh.")
             return
 
         count = 0
