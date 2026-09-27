@@ -1,6 +1,6 @@
 import os
 import sys
-import pandas as pd
+import openpyxl
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.textinput import TextInput
@@ -8,16 +8,15 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
-from kivy.core.window import Window
+from kivy.clock import Clock
 
 class OmborApp(App):
     def build(self):
         self.title = "Ombor - ZIP Platalar Baza"
         
-        # Asosiy ekran joylashuvi (Vertical Layout)
         main_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
         
-        # Qidiruv paneli (TextInput + Button)
+        # Qidiruv paneli
         search_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=50, spacing=10)
         
         self.search_input = TextInput(
@@ -40,53 +39,53 @@ class OmborApp(App):
         search_layout.add_widget(search_button)
         main_layout.add_widget(search_layout)
         
-        # Natijalarni ko'rsatish uchun ScrollView
+        # ScrollView va Natijalar paneli
         self.scroll_view = ScrollView(size_hint=(1, 1))
-        self.results_grid = GridLayout(cols=1, spacing=5, size_hint_y=None)
+        self.results_grid = GridLayout(cols=1, spacing=10, size_hint_y=None)
         self.results_grid.bind(minimum_height=self.results_grid.setter('height'))
         self.scroll_view.add_widget(self.results_grid)
         
         main_layout.add_widget(self.scroll_view)
         
-        # Excel ma'lumotlarini yuklash
-        self.load_excel_data()
+        self.data_rows = []
+        self.headers = []
+        
+        # Dastur to'liq yuklangach Excel'ni fonda o'qish
+        Clock.schedule_once(self.load_excel_data, 0.5)
         
         return main_layout
 
     def get_excel_path(self):
-        """Android va Windows muhitida Excel fayl yo'lini to'g'ri aniqlash"""
-        if getattr(sys, 'frozen', False):
-            base_dir = os.path.dirname(sys.executable)
-        else:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         return os.path.join(base_dir, "2-TB ZIP platalar 31.07.2025.xlsx")
 
-    def load_excel_data(self):
-        """Excel faylni o'qish va xatoliklarni ushlash"""
+    def load_excel_data(self, dt):
         excel_file = self.get_excel_path()
         
-        if os.path.exists(excel_file):
-            try:
-                # Excel faylni barcha ustunlari bilan o'qish
-                self.df = pd.read_excel(excel_file)
-                # Barcha bo'sh kataklarni (NaN) bo'sh matn bilan almashtirish
-                self.df = self.df.fillna("")
-                self.show_message(f"Baza muvaffaqiyatli yuklandi! Jami yozuvlar: {len(self.df)}")
-            except Exception as e:
-                self.df = None
-                self.show_message(f"Excel faylni o'qishda xatolik:\n{str(e)}")
-        else:
-            self.df = None
-            self.show_message(f"Fayl topilmadi:\n{excel_file}\n\nFaylni GitHub'ga yuklaganingizga ishonch hosil qiling!")
+        if not os.path.exists(excel_file):
+            self.show_message(f"Excel fayli topilmadi:\n{excel_file}\n\nFayl GitHub'ga yuklanganini tekshiring!")
+            return
+
+        try:
+            wb = openpyxl.load_workbook(excel_file, data_only=True)
+            sheet = wb.active
+            
+            rows = list(sheet.iter_rows(values_only=True))
+            if rows:
+                self.headers = [str(h) if h is not None else "" for h in rows[0]]
+                self.data_rows = rows[1:]
+                self.show_message(f"Baza yuklandi! Jami platalar: {len(self.data_rows)} ta")
+            else:
+                self.show_message("Excel fayli bo'sh!")
+        except Exception as e:
+            self.show_message(f"Excel faylni o'qishda xatolik:\n{str(e)}")
 
     def show_message(self, text):
-        """Ekran markazida xabar ko'rsatish"""
         self.results_grid.clear_widgets()
         lbl = Label(
             text=text,
             size_hint_y=None,
-            height=100,
+            height=120,
             font_size='16sp',
             halign='center',
             valign='middle'
@@ -95,48 +94,43 @@ class OmborApp(App):
         self.results_grid.add_widget(lbl)
 
     def search_data(self, instance):
-        """Qidiruv so'rovi bo'yicha ma'lumotlarni filtrlash"""
-        if self.df is None or self.df.empty:
-            self.show_message("Ma'lumotlar bazasi yuklanmagan!")
-            return
-
         query = self.search_input.text.strip().lower()
         self.results_grid.clear_widgets()
 
         if not query:
-            self.show_message("Qidiruv uchun biror matn kiriting.")
+            self.show_message("Qidirish uchun biror matn kiriting.")
             return
 
-        # Barcha ustunlar bo'yicha mos keladigan satrlarni qidirish
-        mask = self.df.apply(lambda row: row.astype(str).str.lower().str.contains(query).any(), axis=1)
-        filtered_df = self.df[mask]
-
-        if filtered_df.empty:
-            self.show_message("Hech qanday ma'lumot topilmadi.")
+        if not self.data_rows:
+            self.show_message("Ma'lumotlar bazasi tayyor emas yoki bo'sh.")
             return
 
-        # Topilgan natijalarni ekranga chiqarish
-        for index, row in filtered_df.iterrows():
-            row_text = []
-            for col_name, val in row.items():
-                if str(val).strip():
-                    row_text.append(f"[b]{col_name}:[/b] {val}")
-            
-            card_text = "\n".join(row_text)
-            
-            card = Label(
-                text=card_text,
-                markup=True,
-                size_hint_y=None,
-                font_size='15sp',
-                padding=(10, 10),
-                color=(1, 1, 1, 1)
-            )
-            # Matn balandligiga qarab kartochka balandligini moslash
-            card.bind(texture_size=lambda instance, value: setattr(instance, 'height', max(value[1] + 20, 60)))
-            card.bind(size=card.setter('text_size'))
-            
-            self.results_grid.add_widget(card)
+        count = 0
+        for row in self.data_rows:
+            row_str = " ".join([str(val) for val in row if val is not None]).lower()
+            if query in row_str:
+                count += 1
+                card_lines = []
+                for idx, val in enumerate(row):
+                    if val is not None and str(val).strip():
+                        h_name = self.headers[idx] if idx < len(self.headers) else f"Ustun {idx+1}"
+                        card_lines.append(f"[b]{h_name}:[/b] {val}")
+                
+                card_text = "\n".join(card_lines)
+                
+                card = Label(
+                    text=card_text,
+                    markup=True,
+                    size_hint_y=None,
+                    font_size='15sp',
+                    padding=(12, 12)
+                )
+                card.bind(texture_size=lambda inst, val: setattr(inst, 'height', max(val[1] + 30, 80)))
+                card.bind(size=card.setter('text_size'))
+                self.results_grid.add_widget(card)
+
+        if count == 0:
+            self.show_message("Mos keluvchi plata topilmadi.")
 
 if __name__ == '__main__':
     OmborApp().run()
