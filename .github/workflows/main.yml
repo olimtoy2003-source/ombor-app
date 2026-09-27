@@ -23,12 +23,30 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Install Dependencies
+    - name: Install Dependencies & Convert Excel to SQLite
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential libsqlite3-dev sqlite3 bzip2 libbz2-dev libssl-dev openssl libgdbm-dev libgdbm-compat-dev liblldb-dev libffi-dev zlib1g-dev python3-dev libjpeg-dev aidl autoconf libtool pkg-config zlib1g
         pip install --upgrade pip setuptools
-        pip install "cython<3.0.0" buildozer
+        pip install "cython<3.0.0" buildozer pandas openpyxl
+
+        # Excel faylni avtomatik baza.db (SQLite) ga o'tkazish
+        python3 -c "
+        import pandas as pd
+        import sqlite3
+        import os
+
+        excel_file = '2-TB ZIP platalar 31.07.2025.xlsx'
+        if os.path.exists(excel_file):
+            df = pd.read_excel(excel_file)
+            df = df.fillna('')
+            conn = sqlite3.connect('baza.db')
+            df.to_sql('platalar', conn, if_exists='replace', index=False)
+            conn.close()
+            print('baza.db muvaffaqiyatli yaratildi!')
+        else:
+            print('Excel fayl topilmadi!')
+        "
 
     - name: Create buildozer.spec and Build APK
       run: |
@@ -38,9 +56,9 @@ jobs:
         package.name = ombor
         package.domain = org.test
         source.dir = .
-        source.include_exts = py,png,jpg,dotenv,txt,csv,db,xlsx,xls
+        source.include_exts = py,png,jpg,dotenv,txt,csv,db
         version = 0.1
-        requirements = python3,kivy==2.3.0,sqlite3,openpyxl,et_xmlfile
+        requirements = python3,kivy==2.3.0,sqlite3
         orientation = portrait
         fullscreen = 0
         android.permissions = READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
