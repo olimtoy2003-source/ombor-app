@@ -1,5 +1,6 @@
 import os
 import sys
+import sqlite3
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.textinput import TextInput
@@ -7,7 +8,6 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
-from kivy.clock import Clock
 
 class OmborApp(App):
     def build(self):
@@ -38,7 +38,7 @@ class OmborApp(App):
         search_layout.add_widget(search_button)
         main_layout.add_widget(search_layout)
         
-        # ScrollView
+        # ScrollView va Natijalar paneli
         self.scroll_view = ScrollView(size_hint=(1, 1))
         self.results_grid = GridLayout(cols=1, spacing=10, size_hint_y=None)
         self.results_grid.bind(minimum_height=self.results_grid.setter('height'))
@@ -46,51 +46,27 @@ class OmborApp(App):
         
         main_layout.add_widget(self.scroll_view)
         
-        self.data_rows = []
-        self.headers = []
-        
-        # Ilova to'liq ochilib olgandan so'ng 1.5 soniya o'tib Excel o'qiladi
-        Clock.schedule_once(self.load_excel_data, 1.5)
+        self.check_db_status()
         
         return main_layout
 
-    def get_excel_path(self):
+    def get_db_path(self):
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(base_dir, "2-TB ZIP platalar 31.07.2025.xlsx")
+        return os.path.join(base_dir, "baza.db")
 
-    def load_excel_data(self, dt):
-        excel_file = self.get_excel_path()
-        
-        if not os.path.exists(excel_file):
-            self.show_message(f"Fayl topilmadi:\n{excel_file}")
-            return
-
-        try:
-            import openpyxl
-            wb = openpyxl.load_workbook(excel_file, read_only=True, data_only=True)
-            sheet = wb.active
-            
-            rows = []
-            for row in sheet.iter_rows(values_only=True):
-                rows.append(row)
-                
-            wb.close()
-
-            if rows:
-                self.headers = [str(h) if h is not None else "" for h in rows[0]]
-                self.data_rows = rows[1:]
-                self.show_message(f"Baza yuklandi! Jami platalar: {len(self.data_rows)} ta")
-            else:
-                self.show_message("Excel fayli bo'sh!")
-        except Exception as e:
-            self.show_message(f"Xatolik yuz berdi:\n{str(e)}")
+    def check_db_status(self):
+        db_file = self.get_db_path()
+        if not os.path.exists(db_file):
+            self.show_message(f"Baza fayli topilmadi:\n{db_file}")
+        else:
+            self.show_message("Ma'lumotlar bazasi tayyor. Qidirish uchun matn kiriting.")
 
     def show_message(self, text):
         self.results_grid.clear_widgets()
         lbl = Label(
             text=text,
             size_hint_y=None,
-            height=150,
+            height=120,
             font_size='16sp',
             halign='center',
             valign='middle'
@@ -99,26 +75,45 @@ class OmborApp(App):
         self.results_grid.add_widget(lbl)
 
     def search_data(self, instance):
-        query = self.search_input.text.strip().lower()
+        query = self.search_input.text.strip()
         self.results_grid.clear_widgets()
 
         if not query:
             self.show_message("Qidirish uchun biror matn kiriting.")
             return
 
-        if not self.data_rows:
-            self.show_message("Baza tayyor emas yoki bo'sh.")
+        db_file = self.get_db_path()
+        if not os.path.exists(db_file):
+            self.show_message("Baza fayli (baza.db) topilmadi!")
             return
 
-        count = 0
-        for row in self.data_rows:
-            row_str = " ".join([str(val) for val in row if val is not None]).lower()
-            if query in row_str:
-                count += 1
+        try:
+            conn = sqlite3.connect(db_file)
+            cursor = conn.cursor()
+            
+            cursor.execute("PRAGMA table_info(platalar)")
+            columns_info = cursor.fetchall()
+            headers = [col[1] for col in columns_info]
+            
+            where_clauses = [f'"{col}" LIKE ?' for col in headers]
+            sql_query = f"SELECT * FROM platalar WHERE {' OR '.join(where_clauses)}"
+            
+            search_param = f"%{query}%"
+            params = [search_param] * len(headers)
+            
+            cursor.execute(sql_query, params)
+            rows = cursor.fetchall()
+            conn.close()
+
+            if not rows:
+                self.show_message("Mos keluvchi plata topilmadi.")
+                return
+
+            for row in rows:
                 card_lines = []
                 for idx, val in enumerate(row):
                     if val is not None and str(val).strip():
-                        h_name = self.headers[idx] if idx < len(self.headers) else f"Ustun {idx+1}"
+                        h_name = headers[idx] if idx < len(headers) else f"Ustun {idx+1}"
                         card_lines.append(f"[b]{h_name}:[/b] {val}")
                 
                 card_text = "\n".join(card_lines)
@@ -130,12 +125,12 @@ class OmborApp(App):
                     font_size='15sp',
                     padding=(12, 12)
                 )
-                card.bind(texture_size=lambda inst, val: setattr(inst, 'height', max(val[1] + 30, 80)))
+                card.bind(texture_size=lambda inst, v: setattr(inst, 'height', max(v[1] + 30, 80)))
                 card.bind(size=card.setter('text_size'))
                 self.results_grid.add_widget(card)
 
-        if count == 0:
-            self.show_message("Mos keluvchi plata topilmadi.")
+        except Exception as e:
+            self.show_message(f"Qidiruvda xatolik yuz berdi:\n{str(e)}")
 
 if __name__ == '__main__':
     OmborApp().run()
