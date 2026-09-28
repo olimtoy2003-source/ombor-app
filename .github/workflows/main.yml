@@ -28,7 +28,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y build-essential libsqlite3-dev sqlite3 bzip2 libbz2-dev libssl-dev openssl libgdbm-dev libgdbm-compat-dev liblldb-dev libffi-dev zlib1g-dev python3-dev libjpeg-dev aidl autoconf libtool pkg-config zlib1g
         pip install --upgrade pip setuptools
-        pip install "cython<3.0.0" buildozer pandas openpyxl
+        pip install "cython==0.29.33" buildozer pandas openpyxl
 
         # Excel faylni avtomatik baza.db (SQLite) ga o'tkazish
         python3 -c "
@@ -58,7 +58,7 @@ jobs:
         source.dir = .
         source.include_exts = py,png,jpg,dotenv,txt,csv,db
         version = 0.1
-        requirements = python3,kivy==2.3.0,sqlite3
+        requirements = python3,kivy,sqlite3
         orientation = portrait
         fullscreen = 0
         android.permissions = READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE
